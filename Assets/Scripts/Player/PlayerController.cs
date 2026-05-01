@@ -13,6 +13,13 @@ namespace VoxelBeat.Player
         [SerializeField] private float dashDuration = 0.15f;
         [SerializeField] private float dashCooldown = 0.8f;
         [SerializeField] private float rotationSpeed = 15f;
+        [SerializeField] private float invulnerabilityExtraTime = 0.1f; // Tiempo extra tras el dash
+        [SerializeField] private float hitInvulnerabilityDuration = 1.0f; // Tiempo tras ser golpeado
+        
+        [Header("Visual Feedback")]
+        [SerializeField] private Renderer playerRenderer;
+        [SerializeField] private TrailRenderer dashTrail;
+        [SerializeField] private float flashFrequency = 0.1f;
 
         [Header("Isometric Settings")]
         [SerializeField] private float isoAngle = 45f;
@@ -25,10 +32,19 @@ namespace VoxelBeat.Player
         private bool _isDashing;
         private float _dashTimeCounter;
         private float _dashCooldownCounter;
+        private float _invulnerableTimeCounter;
+        private float _hitInvulnerableCounter; // Nuevo: específico para daño
+        private float _flashTimer;
+
+        public bool IsInvulnerable => _isDashing || _invulnerableTimeCounter > 0 || _hitInvulnerableCounter > 0;
 
         private void Awake()
         {
             _rb = GetComponent<Rigidbody>();
+            
+            // Si no se asignó manualmente, intentamos buscar el renderer en los hijos
+            if (playerRenderer == null) playerRenderer = GetComponentInChildren<Renderer>();
+            
             _rb.freezeRotation = true;
             _rb.useGravity = false; // Arena estática, movimiento en plano XZ
             
@@ -37,15 +53,17 @@ namespace VoxelBeat.Player
         }
 
         // Se llama desde PlayerInput (Events)
-        public void OnMove(InputAction.CallbackContext context)
+        // Se llama automáticamente por PlayerInput (Send Messages)
+        public void OnMove(InputValue value)
         {
-            _moveInput = context.ReadValue<Vector2>();
+            _moveInput = value.Get<Vector2>();
+            if (_moveInput != Vector2.zero) Debug.Log($"Movimiento detectado: {_moveInput}");
         }
 
-        // Se llama desde PlayerInput (Events) - Asumiendo que usamos 'Jump' o 'Sprint' para Dash
-        public void OnDash(InputAction.CallbackContext context)
+        // Se llama automáticamente por PlayerInput (Send Messages) al usar la acción "Sprint"
+        public void OnSprint(InputValue value)
         {
-            if (context.performed && !_isDashing && _dashCooldownCounter <= 0)
+            if (value.isPressed && !_isDashing && _dashCooldownCounter <= 0)
             {
                 StartDash();
             }
@@ -55,6 +73,14 @@ namespace VoxelBeat.Player
         {
             if (_dashCooldownCounter > 0)
                 _dashCooldownCounter -= Time.deltaTime;
+
+            if (_invulnerableTimeCounter > 0)
+                _invulnerableTimeCounter -= Time.deltaTime;
+
+            if (_hitInvulnerableCounter > 0)
+                _hitInvulnerableCounter -= Time.deltaTime;
+
+            HandleVisualFeedback();
 
             if (_isDashing)
             {
@@ -86,7 +112,7 @@ namespace VoxelBeat.Player
 
         private void ApplyMovement()
         {
-            // Movimiento usando velocity para mayor control en bullet hell
+            // Movimiento usando linearVelocity (Unity 6+)
             _rb.linearVelocity = _moveDirection * moveSpeed;
             
             if (_moveDirection != Vector3.zero)
@@ -104,10 +130,11 @@ namespace VoxelBeat.Player
             
             Vector3 dashDir = _moveDirection != Vector3.zero ? _moveDirection : transform.forward;
             
-            // Deshabilitar fricción temporalmente o simplemente setear velocidad
+            // Aplicar velocidad de dash
             _rb.linearVelocity = dashDir * dashForce;
             
-            // Visual feedback (opcional por ahora)
+            if (dashTrail != null) dashTrail.emitting = true;
+            
             Debug.Log("Player Dash!");
         }
 
@@ -115,6 +142,40 @@ namespace VoxelBeat.Player
         {
             _isDashing = false;
             _rb.linearVelocity = Vector3.zero;
+            _invulnerableTimeCounter = invulnerabilityExtraTime;
+
+            if (dashTrail != null) dashTrail.emitting = false;
+        }
+
+        public void TriggerInvulnerability(float duration)
+        {
+            // Solo lo activamos si el nuevo tiempo es mayor al actual
+            _invulnerableTimeCounter = Mathf.Max(_invulnerableTimeCounter, duration);
+        }
+
+        public void OnHit()
+        {
+            _hitInvulnerableCounter = hitInvulnerabilityDuration;
+        }
+
+        private void HandleVisualFeedback()
+        {
+            if (playerRenderer == null) return;
+
+            // El parpadeo ahora solo depende del contador de daño
+            if (_hitInvulnerableCounter > 0)
+            {
+                _flashTimer -= Time.deltaTime;
+                if (_flashTimer <= 0)
+                {
+                    playerRenderer.enabled = !playerRenderer.enabled;
+                    _flashTimer = flashFrequency;
+                }
+            }
+            else
+            {
+                playerRenderer.enabled = true;
+            }
         }
     }
 }

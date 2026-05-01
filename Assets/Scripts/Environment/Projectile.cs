@@ -28,11 +28,26 @@ namespace VoxelBeat.Environment
 
         private void OnTriggerEnter(Collider other)
         {
-            // En la fase 1 solo detectamos el impacto
             if (other.CompareTag("Player"))
             {
+                // Obtenemos el controlador del jugador para chequear su estado
+                VoxelBeat.Player.PlayerController player = other.GetComponent<VoxelBeat.Player.PlayerController>();
+                
+                if (player != null && player.IsInvulnerable)
+                {
+                    // El jugador es invulnerable, ignoramos el impacto
+                    // Podríamos añadir un pequeño efecto visual aquí después
+                    return; 
+                }
+
                 Debug.Log("<color=red>Player Hit!</color>");
-                // Aquí iría la lógica de daño en la Fase 4
+                player.OnHit();
+                Destroy(gameObject);
+            }
+            // Verificamos si el nombre empieza con "Wall" (así los nombra nuestro ArenaManager)
+            else if (other.name.StartsWith("Wall"))
+            {
+                // Se destruye al chocar con la pared opuesta
                 Destroy(gameObject);
             }
         }
